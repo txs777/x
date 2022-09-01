@@ -1,0 +1,173 @@
+---
+title: "DATA358 Final"
+author: "Taylor Stacy"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_section: no
+    toc: no
+    toc_depth: 3
+    toc_float: yes
+    code_folding: show
+    css: lab_templet.css
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(ggplot2)
+library(rsample)
+library(MASS) 
+library(caret)
+library(reshape2)
+library(here)
+library(gridExtra)
+library(factoextra)
+library(kableExtra)
+library(jtools)
+library(readr)
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+## Data
+```{r}
+dat <- read_csv(here("Final Project/data358_finaldata_va.csv"))
+summary(dat)
+```
+## Data Cleaning
+### Missing Values
+```{r}
+dat %>% 
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  gather()%>%
+  mutate(percent=round(value/sum(value)*100,2))
+datx <- dat %>%
+  mutate(OffAge= ifelse(is.na(OffAge), mean(OffAge, na.rm=TRUE), OffAge)) %>%
+  mutate(VicAge= ifelse(is.na(VicAge), mean(VicAge, na.rm=TRUE), VicAge)) %>%
+  ungroup()
+dat %>% 
+  group_by(VicSex) %>% 
+  summarize(count= n()) %>% 
+  mutate(prop=round(count/sum(count),2)) %>% 
+  arrange(desc(count))
+dat %>% 
+  group_by(VicRace) %>% 
+  summarize(count= n()) %>% 
+  mutate(prop=round(count/sum(count),2)) %>% 
+  arrange(desc(count))
+dat %>% 
+  group_by(OffSex) %>% 
+  summarize(count= n()) %>% 
+  mutate(prop=round(count/sum(count),2)) %>% 
+  arrange(desc(count))
+dat %>% 
+  group_by(OffRace) %>% 
+  summarize(count= n()) %>% 
+  mutate(prop=round(count/sum(count),2)) %>% 
+  arrange(desc(count))
+dat %>% 
+  group_by(Weapon) %>% 
+  summarize(count= n()) %>% 
+  mutate(prop=round(count/sum(count),2)) %>% 
+  arrange(desc(count))
+datx <- datx %>% 
+  mutate(VicSex= ifelse(is.na(VicSex),"Male", VicSex)) %>% 
+  mutate(VicRace= ifelse(is.na(VicRace),"Black", VicRace)) %>% 
+  mutate(OffSex= ifelse(is.na(OffSex), "Male" , OffSex)) %>% 
+  mutate(OffRace= ifelse(is.na(OffRace),"Black", OffRace)) %>%
+  mutate(Weapon = ifelse(is.na(Weapon), "Firearm", Weapon))
+```
+
+```{r}
+finaldat <- datx %>% 
+  mutate(Solved = as.factor(Solved)) %>% 
+  mutate(Homicide = as.factor(Homicide)) %>% 
+  mutate(Situation = as.factor(Situation)) %>% 
+  mutate(VicSex = as.factor(VicSex)) %>% 
+  mutate(VicRace= as.factor(VicRace)) %>% 
+  mutate(OffSex = as.factor(OffSex)) %>% 
+  mutate(OffRace= as.factor(OffRace)) %>% 
+  mutate(Weapon = as.factor(Weapon))
+
+finaldat %>% 
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  gather()
+```
+```{r}
+summary(finaldat)
+```
+
+## Distribution of Victims and Officers by Race and Sex
+```{r}
+ggplot(data = finaldat, aes(x=VicRace, fill = VicSex), horizontal = TRUE)+
+  geom_histogram(stat = "count")+
+  coord_flip()+
+  theme_classic()
+ggplot(data = finaldat, aes(x=OffRace, fill = OffSex))+
+  geom_histogram(stat = "count")+
+  coord_flip()+
+  theme_classic()
+```
+
+The races white and black are the highest values for both the officers and victims, this can be explained by the US' population distribution, which has been predominately white and black. 
+
+Most officers and victims' ethnicity was not reported or unknown. 
+
+```{r}
+ggplot(data = finaldat, aes(x=Weapon, fill = Weapon))+
+  geom_histogram(stat = "count", binwidth=1,boundary=-0.5) +
+  theme(text = element_text(size=10), axis.text.x = element_text(angle=45, hjust = 1))
+```
+
+## Data Splitting
+```{r}
+set.seed(1234)
+inTrain <- createDataPartition(finaldat$Solved,
+                               p=0.8,
+                               list = FALSE)
+train <- finaldat[inTrain,]
+test <- finaldat[-inTrain,]
+```
+# Hierarchical Tree
+## Distance Matrix
+```{r}
+start <- Sys.time()
+
+res.dist <- dist(finaldat,
+                 method = "euclidian")
+fviz_dist(res.dist,
+          lab_size = 2)
+
+end <- Sys.time()
+end - start
+```
+
+## Denrograph
+```{r}
+res.hc.ward <- hclust(
+  d= res.dist,
+  method = "ward.D2")
+plot(res.hc.ward, hang = -1, cex = 0.6)
+```
+
+### Visualize Tree
+```{r}
+dat_num <- finaldat %>% 
+  mutate(Solved = as.numeric(Solved)) %>% 
+  mutate(Homicide = as.numeric(Homicide)) %>% 
+  mutate(Situation = as.numeric(Situation)) %>% 
+  mutate(VicSex = as.numeric(VicSex)) %>% 
+  mutate(OffSex = as.numeric(OffSex)) %>% 
+  mutate(VicRace = as.numeric(VicRace)) %>% 
+  mutate(OffRace = as.numeric(OffRace)) %>% 
+  mutate(Weapon = as.numeric(Weapon))
+
+grp <- cutree(res.hc.ward, k = 4)
+fviz_cluster(
+  list(data = dat_num, cluster = grp),
+  ellipse.type = "convex", 
+  show.clust.cent = FALSE, 
+  ggtheme = theme_minimal())
+```
